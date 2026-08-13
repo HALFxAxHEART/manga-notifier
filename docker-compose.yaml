@@ -1,0 +1,17 @@
+services:
+  notifier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    mem_limit: 128m
+    volumes:
+      - notifier-data:/data
+    networks:
+      - coolify
+
+volumes:
+  notifier-data:
+
+networks:
+  coolify:
+    external: true
