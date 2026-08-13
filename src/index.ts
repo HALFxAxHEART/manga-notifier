@@ -1,7 +1,13 @@
 import { env } from "./env";
-import { fetchRecentLibraryChapters } from "./suwayomi";
+import {
+  fetchRecentLibraryChapters,
+  triggerLibraryUpdate,
+  listLibraryMangas,
+  fetchMangaThumbnailBase64,
+} from "./suwayomi";
 import { notifyNewChapter } from "./ntfy";
 import { loadState, saveState } from "./state";
+import { healMissingCovers } from "./kavita";
 
 async function tick(): Promise<void> {
   const state = await loadState();
@@ -41,20 +47,43 @@ async function primeStateOnFirstRun(): Promise<void> {
   await saveState({ lastNotifiedFetchedAt: maxFetchedAt, notifiedChapterIds: chapters.map((c) => c.id) });
 }
 
-async function main(): Promise<void> {
-  await primeStateOnFirstRun();
+async function libraryUpdateTick(): Promise<void> {
+  await triggerLibraryUpdate();
+  console.log(`[${new Date().toISOString()}] triggered Suwayomi library update`);
+}
 
-  const intervalMs = env.pollIntervalMinutes * 60_000;
-  console.log(`manga-notifier started, polling every ${env.pollIntervalMinutes}m`);
+async function coverHealTick(): Promise<void> {
+  if (!env.kavitaUrl) return;
+  const mangas = await listLibraryMangas();
+  await healMissingCovers(fetchMangaThumbnailBase64, mangas);
+}
 
+async function loop(name: string, intervalMinutes: number, fn: () => Promise<void>): Promise<void> {
+  const intervalMs = intervalMinutes * 60_000;
   while (true) {
     try {
-      await tick();
+      await fn();
     } catch (err) {
-      console.error(`[${new Date().toISOString()}] tick failed:`, err);
+      console.error(`[${new Date().toISOString()}] ${name} failed:`, err);
     }
     await Bun.sleep(intervalMs);
   }
+}
+
+async function main(): Promise<void> {
+  await primeStateOnFirstRun();
+
+  console.log(
+    `manga-notifier started: notify every ${env.pollIntervalMinutes}m, ` +
+      `library update every ${env.libraryUpdateIntervalMinutes}m, ` +
+      `cover heal every ${env.coverCheckIntervalMinutes}m`,
+  );
+
+  await Promise.all([
+    loop("notify", env.pollIntervalMinutes, tick),
+    loop("library-update", env.libraryUpdateIntervalMinutes, libraryUpdateTick),
+    loop("cover-heal", env.coverCheckIntervalMinutes, coverHealTick),
+  ]);
 }
 
 main();
