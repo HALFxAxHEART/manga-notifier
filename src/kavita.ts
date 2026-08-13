@@ -52,10 +52,16 @@ export async function healMissingCovers(
   suwayomiMangas: { id: number; title: string }[],
 ): Promise<void> {
   const auth = await login();
-  if (!auth) return;
+  if (!auth) {
+    console.log("[cover-heal] Kavita not configured, skipping");
+    return;
+  }
 
   const series = await listSeries(auth.token);
   const byTitle = new Map(suwayomiMangas.map((m) => [normalizeTitle(m.title), m.id]));
+
+  let fixed = 0;
+  let missingMatch = 0;
 
   for (const s of series) {
     const exists = await coverExists(s.id, auth.apiKey);
@@ -63,6 +69,7 @@ export async function healMissingCovers(
 
     const mangaId = byTitle.get(normalizeTitle(s.name));
     if (mangaId === undefined) {
+      missingMatch++;
       console.log(`[cover-heal] no Suwayomi match for Kavita series "${s.name}", skipping`);
       continue;
     }
@@ -71,6 +78,9 @@ export async function healMissingCovers(
     if (!thumb) continue;
 
     await uploadCover(auth.token, s.id, thumb.base64);
+    fixed++;
     console.log(`[cover-heal] re-uploaded cover for "${s.name}" (series ${s.id})`);
   }
+
+  console.log(`[cover-heal] checked ${series.length} series, fixed ${fixed}, ${missingMatch} unmatched`);
 }
